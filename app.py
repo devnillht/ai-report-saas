@@ -38,9 +38,13 @@ def extract_text(file):
 # STRUCTURED PARSING (NO AI)
 # =============================
 
+import re
+
 def parse_report(text):
 
-    lines = text.split("\n")
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    text_lower = text.lower()
+
     data = {
         "teacher_name": "",
         "subject": "",
@@ -51,35 +55,67 @@ def parse_report(text):
         "student_talk_percentage": 50
     }
 
-    for i, line in enumerate(lines):
-
-        if "Teacher Name" in line:
+    # TEACHER NAME
+    for line in lines:
+        if "teacher name" in line.lower() or "name of teacher" in line.lower():
             data["teacher_name"] = line.split(":")[-1].strip()
+            break
 
-        if "Subject" in line:
+    if not data["teacher_name"]:
+        for line in lines[:10]:
+            if any(prefix in line for prefix in ["Mr.", "Ms.", "Mrs.", "Miss"]):
+                data["teacher_name"] = line.strip()
+                break
+
+    # SUBJECT
+    for line in lines:
+        if "subject" in line.lower():
             data["subject"] = line.split(":")[-1].strip()
+            break
 
-        if "Teacher Talk" in line:
-            value = line.split(":")[-1].replace("%","").strip()
-            if value.isdigit():
-                data["teacher_talk_percentage"] = int(value)
+    # TALK RATIO
+    talk_pattern = re.findall(r'(\d+)\s*%', text)
+    if len(talk_pattern) >= 2:
+        data["teacher_talk_percentage"] = int(talk_pattern[0])
+        data["student_talk_percentage"] = int(talk_pattern[1])
 
-        if "Student Talk" in line:
-            value = line.split(":")[-1].replace("%","").strip()
-            if value.isdigit():
-                data["student_talk_percentage"] = int(value)
+    # GLOWS / GROWS
+    glow_keywords = ["glows", "strengths", "strong points"]
+    grow_keywords = ["grows", "areas for improvement", "improvement", "action points"]
 
-        if "Glows" in line or "GLOWS" in line:
-            j = i + 1
-            while j < len(lines) and lines[j].strip() != "":
-                data["glows"].append(lines[j].strip())
-                j += 1
+    current_section = None
 
-        if "Grows" in line or "GROWS" in line:
-            j = i + 1
-            while j < len(lines) and lines[j].strip() != "":
-                data["grows"].append(lines[j].strip())
-                j += 1
+    for line in lines:
+        lower = line.lower()
+
+        if any(k in lower for k in glow_keywords):
+            current_section = "glows"
+            continue
+
+        if any(k in lower for k in grow_keywords):
+            current_section = "grows"
+            continue
+
+        bullet_match = re.match(r'^(\d+[\.\)]|\-|•)\s*(.*)', line)
+        if bullet_match and current_section:
+            content = bullet_match.group(2).strip()
+            if content:
+                data[current_section].append(content)
+            continue
+
+        if current_section and len(line) > 5 and not any(k in lower for k in glow_keywords + grow_keywords):
+            data[current_section].append(line)
+
+    # AUTO RATING
+    positive_words = ["excellent", "strong", "effective", "confident", "engaging"]
+    score = sum(word in text_lower for word in positive_words)
+
+    if score >= 4:
+        data["rating"] = 4.8
+    elif score >= 2:
+        data["rating"] = 4.5
+    else:
+        data["rating"] = 4.2
 
     return data
 
@@ -143,3 +179,4 @@ if uploaded_files and st.button("Generate Final Dashboard Report"):
         file_name="consolidated_dashboard_report.html",
         mime="text/html"
     )
+
