@@ -1,18 +1,10 @@
 import streamlit as st
 import pdfplumber
 import docx
-import google.generativeai as genai
 import pandas as pd
 import json
 from collections import Counter
 from pathlib import Path
-
-# =============================
-# CONFIG
-# =============================
-
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel("models/gemini-1.0-pro")
 
 st.set_page_config(layout="wide")
 st.title("📊 Consolidated Report Generator (III–V Format)")
@@ -43,43 +35,63 @@ def extract_text(file):
         return "\n".join([p.text for p in doc.paragraphs])
 
 # =============================
-# AI STRUCTURED PARSING
+# STRUCTURED PARSING (NO AI)
 # =============================
 
-def parse_with_ai(text):
+def parse_report(text):
 
-    prompt = f"""
-Extract structured JSON from this teacher observation.
+    lines = text.split("\n")
+    data = {
+        "teacher_name": "",
+        "subject": "",
+        "rating": 4.5,
+        "glows": [],
+        "grows": [],
+        "teacher_talk_percentage": 50,
+        "student_talk_percentage": 50
+    }
 
-Return ONLY valid JSON:
+    for i, line in enumerate(lines):
 
-{{
-  "teacher_name": "",
-  "subject": "",
-  "rating": 4.5,
-  "glows": [],
-  "grows": [],
-  "teacher_talk_percentage": 50,
-  "student_talk_percentage": 50
-}}
+        if "Teacher Name" in line:
+            data["teacher_name"] = line.split(":")[-1].strip()
 
-Report:
-{text}
-"""
+        if "Subject" in line:
+            data["subject"] = line.split(":")[-1].strip()
 
-    response = model.generate_content(prompt)
-    return json.loads(response.text)
+        if "Teacher Talk" in line:
+            value = line.split(":")[-1].replace("%","").strip()
+            if value.isdigit():
+                data["teacher_talk_percentage"] = int(value)
+
+        if "Student Talk" in line:
+            value = line.split(":")[-1].replace("%","").strip()
+            if value.isdigit():
+                data["student_talk_percentage"] = int(value)
+
+        if "Glows" in line or "GLOWS" in line:
+            j = i + 1
+            while j < len(lines) and lines[j].strip() != "":
+                data["glows"].append(lines[j].strip())
+                j += 1
+
+        if "Grows" in line or "GROWS" in line:
+            j = i + 1
+            while j < len(lines) and lines[j].strip() != "":
+                data["grows"].append(lines[j].strip())
+                j += 1
+
+    return data
 
 # =============================
 # TEMPLATE LOADING
 # =============================
 
 def load_template():
-    template_path = Path("templates/consolidated_template.html")
-    return template_path.read_text()
+    return Path("templates/consolidated_template.html").read_text()
 
 # =============================
-# HTML INJECTION ENGINE
+# HTML GENERATOR
 # =============================
 
 def generate_final_html(df):
@@ -94,22 +106,20 @@ def generate_final_html(df):
     for glows in df["glows"]:
         all_glows.extend(glows)
 
-    most_common_glow = Counter(all_glows).most_common(1)[0][0]
+    most_common_glow = Counter(all_glows).most_common(1)[0][0] if all_glows else "N/A"
 
-    # Replace placeholders
     template = template.replace("{{TOTAL_TEACHERS}}", str(total_teachers))
     template = template.replace("{{AVG_RATING}}", str(avg_rating))
     template = template.replace("{{AVG_STUDENT_TALK}}", str(avg_student_talk))
     template = template.replace("{{MOST_COMMON_GLOW}}", most_common_glow)
 
-    # Inject Teacher JSON
     teacher_json = df.to_dict(orient="records")
     template = template.replace("{{TEACHER_DATA_JSON}}", json.dumps(teacher_json))
 
     return template
 
 # =============================
-# MAIN EXECUTION
+# MAIN
 # =============================
 
 if uploaded_files and st.button("Generate Final Dashboard Report"):
@@ -118,7 +128,7 @@ if uploaded_files and st.button("Generate Final Dashboard Report"):
 
     for file in uploaded_files:
         raw = extract_text(file)
-        structured = parse_with_ai(raw)
+        structured = parse_report(raw)
         reports.append(structured)
 
     df = pd.DataFrame(reports)
@@ -133,5 +143,3 @@ if uploaded_files and st.button("Generate Final Dashboard Report"):
         file_name="consolidated_dashboard_report.html",
         mime="text/html"
     )
-
-
