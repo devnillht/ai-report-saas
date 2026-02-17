@@ -12,7 +12,7 @@ from pathlib import Path
 # =============================
 
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
+model = genai.GenerativeModel("models/gemini-1.0-pro")
 
 st.set_page_config(layout="wide")
 st.title("📊 Consolidated Report Generator (III–V Format)")
@@ -133,4 +133,5 @@ if uploaded_files and st.button("Generate Final Dashboard Report"):
         file_name="consolidated_dashboard_report.html",
         mime="text/html"
     )
+
 
