@@ -3,9 +3,9 @@ import pdfplumber
 import docx
 import google.generativeai as genai
 import pandas as pd
-import plotly.express as px
 import json
 from collections import Counter
+from pathlib import Path
 
 # =============================
 # CONFIG
@@ -15,14 +15,10 @@ genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 st.set_page_config(layout="wide")
-st.title("📊 AI Consolidated Report Generator")
-
-# =============================
-# FILE UPLOAD
-# =============================
+st.title("📊 Consolidated Report Generator (III–V Format)")
 
 uploaded_files = st.file_uploader(
-    "Upload up to 80 Teacher Reports (PDF/DOCX)",
+    "Upload up to 80 Teacher Reports",
     type=["pdf", "docx"],
     accept_multiple_files=True
 )
@@ -47,13 +43,13 @@ def extract_text(file):
         return "\n".join([p.text for p in doc.paragraphs])
 
 # =============================
-# AI PARSING
+# AI STRUCTURED PARSING
 # =============================
 
 def parse_with_ai(text):
 
     prompt = f"""
-Extract structured JSON from this teacher observation report.
+Extract structured JSON from this teacher observation.
 
 Return ONLY valid JSON:
 
@@ -75,10 +71,48 @@ Report:
     return json.loads(response.text)
 
 # =============================
-# MAIN PROCESS
+# TEMPLATE LOADING
 # =============================
 
-if uploaded_files and st.button("Generate Consolidated Report"):
+def load_template():
+    template_path = Path("templates/consolidated_template.html")
+    return template_path.read_text()
+
+# =============================
+# HTML INJECTION ENGINE
+# =============================
+
+def generate_final_html(df):
+
+    template = load_template()
+
+    total_teachers = len(df)
+    avg_rating = round(df["rating"].mean(), 2)
+    avg_student_talk = round(df["student_talk_percentage"].mean(), 1)
+
+    all_glows = []
+    for glows in df["glows"]:
+        all_glows.extend(glows)
+
+    most_common_glow = Counter(all_glows).most_common(1)[0][0]
+
+    # Replace placeholders
+    template = template.replace("{{TOTAL_TEACHERS}}", str(total_teachers))
+    template = template.replace("{{AVG_RATING}}", str(avg_rating))
+    template = template.replace("{{AVG_STUDENT_TALK}}", str(avg_student_talk))
+    template = template.replace("{{MOST_COMMON_GLOW}}", most_common_glow)
+
+    # Inject Teacher JSON
+    teacher_json = df.to_dict(orient="records")
+    template = template.replace("{{TEACHER_DATA_JSON}}", json.dumps(teacher_json))
+
+    return template
+
+# =============================
+# MAIN EXECUTION
+# =============================
+
+if uploaded_files and st.button("Generate Final Dashboard Report"):
 
     reports = []
 
@@ -89,46 +123,13 @@ if uploaded_files and st.button("Generate Consolidated Report"):
 
     df = pd.DataFrame(reports)
 
-    # =============================
-    # ANALYTICS
-    # =============================
+    final_html = generate_final_html(df)
 
-    avg_rating = df["rating"].mean()
-    avg_student_talk = df["student_talk_percentage"].mean()
-
-    all_glows = []
-    for glows in df["glows"]:
-        all_glows.extend(glows)
-
-    most_common_glow = Counter(all_glows).most_common(1)[0][0]
-
-    st.subheader("📌 Key Metrics")
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Teachers", len(df))
-    col2.metric("Average Rating", round(avg_rating, 2))
-    col3.metric("Avg Student Talk %", round(avg_student_talk, 1))
-
-    st.success(f"Most Frequent Strength: {most_common_glow}")
-
-    # =============================
-    # CHART
-    # =============================
-
-    glow_counts = Counter(all_glows)
-    chart_df = pd.DataFrame(glow_counts.items(), columns=["Strength", "Count"])
-
-    fig = px.bar(chart_df, x="Count", y="Strength", orientation="h")
-    st.plotly_chart(fig, use_container_width=True)
-
-    # =============================
-    # EXPORT HTML
-    # =============================
-
-    html_output = df.to_html()
+    st.success("Dashboard Generated Successfully")
 
     st.download_button(
-        "Download Raw HTML Data",
-        html_output,
-        file_name="consolidated_report.html"
+        "Download Final Consolidated HTML",
+        final_html,
+        file_name="consolidated_dashboard_report.html",
+        mime="text/html"
     )
