@@ -3,6 +3,7 @@ import pdfplumber
 import docx
 import pandas as pd
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -179,4 +180,5 @@ if uploaded_files and st.button("Generate Final Dashboard Report"):
         file_name="consolidated_dashboard_report.html",
         mime="text/html"
     )
+
 
